@@ -62,10 +62,13 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
+<<<<<<< HEAD
 #include <linux/task_integrity.h>
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs_def.h>
 #endif
+=======
+>>>>>>> 65fb7abff9ce (fs: kernel: susfs: remove inline hooks)
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1740,20 +1743,6 @@ static int __do_execve_file(int fd, struct filename *filename,
 
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
-
-#ifdef CONFIG_KSU_SUSFS
-	if (likely(susfs_is_current_proc_umounted())) {
-		goto orig_flow;
-	}
-
-	if (unlikely(ksu_execveat_hook || !susfs_is_boot_completed_triggered)) {
-		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
-	} else if ((__ksu_is_allow_uid_for_current(current_uid().val))) {
-		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
-	}
-
-orig_flow:
-#endif
 	
 	/*
 	 * We move the actual failure in case of RLIMIT_NPROC excess from
@@ -1903,7 +1892,7 @@ out_ret:
 	return retval;
 }
 
-#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
+#if defined(CONFIG_KSU)
 __attribute__((hot))
 extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
 				void *argv, void *envp, int *flags);
@@ -1936,7 +1925,7 @@ int do_execve(struct filename *filename,
 {
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
-#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
+#if defined(CONFIG_KSU)
 	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
 #endif
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
@@ -1966,7 +1955,7 @@ static int compat_do_execve(struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS) // 32-bit ksud and 32-on-64 support
+#if defined(CONFIG_KSU)
 	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
 #endif
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
