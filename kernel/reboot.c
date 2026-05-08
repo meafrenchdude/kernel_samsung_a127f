@@ -301,6 +301,11 @@ EXPORT_SYMBOL_GPL(kernel_power_off);
 
 DEFINE_MUTEX(system_transition_mutex);
 
+#if defined(CONFIG_KSU) && defined(CONFIG_KSU_MANUAL_HOOK)
+__attribute__((hot))
+extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
+#endif
+
 /*
  * Reboot system call: for obvious reasons only root may call it,
  * and even root needs to set up some magic numbers in the registers
@@ -320,6 +325,14 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	int ret = 0;
 #ifdef CONFIG_KSU 
 	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+#endif
+
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
+    ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+#endif
+#ifdef CONFIG_KSU_SUSFS
+ret = ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+	return ret;
 #endif
 
 	/* We only trust the superuser with rebooting the system. */
