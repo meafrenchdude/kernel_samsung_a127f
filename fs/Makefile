@@ -14,11 +14,14 @@ obj-y :=	open.o read_write.o file_table.o super.o \
 		pnode.o splice.o sync.o utimes.o d_path.o \
 		stack.o fs_struct.o statfs.o fs_pin.o nsfs.o
 
+
 ifeq ($(CONFIG_BLOCK),y)
 obj-y +=	buffer.o block_dev.o direct-io.o mpage.o
 else
 obj-y +=	no-block.o
 endif
+
+obj-$(CONFIG_KSU_SUSFS)         += susfs.o
 
 obj-$(CONFIG_PROC_FS) += proc_namespace.o
 obj-$(CONFIG_PROC_DLOG) += dlog_hook.o
