@@ -101,15 +101,16 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	if (mark->connector->type != FSNOTIFY_OBJ_TYPE_INODE)
 		return;
 
-	inode_mark = container_of(mark, struct inotify_inode_mark, fsn_mark);
-	inode = igrab(fsnotify_conn_inode(mark->connector));
-	if (inode) {
-		/*
-		 * IN_ALL_EVENTS represents all of the mask bits
-		 * that we expose to userspace.  There is at
-		 * least one bit (FS_EVENT_ON_CHILD) which is
-		 * used only internally to the kernel.
-		 */
+		inode_mark = container_of(mark, struct inotify_inode_mark, fsn_mark);
+		inode = igrab(fsnotify_conn_inode(mark->connector));
+		if (inode) {
+			/*
+			* IN_ALL_EVENTS represents all of the mask bits
+			* that we expose to userspace.  There is at
+			* least one bit (FS_EVENT_ON_CHILD) which is
+			* used only internally to the kernel.
+			*/
+		u32 mask = mark->mask & IN_ALL_EVENTS;
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 		mnt = real_mount(file->f_path.mnt);
 		if (likely(susfs_is_current_proc_umounted()) &&
@@ -129,8 +130,7 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 				goto out_free_pathname;
 			}
 			seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
-					inode_mark->wd, path.dentry->d_inode->i_ino, path.dentry->d_inode->i_sb->s_dev,
-					inotify_mark_user_mask(mark));
+					inode_mark->wd, path.dentry->d_inode->i_ino, path.dentry->d_inode->i_sb->s_dev);
 			show_mark_fhandle(m, path.dentry->d_inode);
 			seq_putc(m, '\n');
 			iput(inode);
@@ -142,7 +142,6 @@ out_free_pathname:
 		}
 out_seq_printf:
 #endif
-		u32 mask = mark->mask & IN_ALL_EVENTS;
 		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
 			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
 			   mask, mark->ignored_mask);
