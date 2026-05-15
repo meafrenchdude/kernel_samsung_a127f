@@ -1,0 +1,180 @@
+name: Build Kernel (KernelSU-Next-SusFS-Dev)
+
+on:
+  push:
+    branches:
+      - kernelsu-next-susfs-dev
+
+  workflow_dispatch:
+    inputs:
+      LOCALVERSION:
+        description: Kernel localversion
+        required: true
+        default: "-AFrenchKernel_KernelSU-Next_v"
+      AK3_NAME:
+        description: Enter custom name for AnyKernel3 artifact
+        required: true
+        default: "AFrenchKernel_KernelSU-Next_v"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          repository: meafrenchdude/kernel_samsung_a127f
+          path: kernel_root
+          ref: kernelsu-next-susfs-dev
+          show-progress: false
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Prepare dependencies + fetch tags
+        run: |
+          sudo apt update -y
+          sudo apt install bc cpio flex bison aptitude git python-is-python3 tar perl wget curl lz4 -y
+          sudo aptitude install libssl-dev -y
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --tags --force
+        working-directory: kernel_root
+
+      - name: Fetch toolchains (Clang 11 + GCC 4.9)
+        run: |
+          mkdir toolchains && cd toolchains
+          git clone --depth=1 -b clang-11 https://github.com/rsuntk/toolchains.git clang
+          git clone --depth=1 -b androidcc-4.9 https://github.com/rsuntk/toolchains.git google
+        working-directory: kernel_root
+
+      - name: Set timezone (Europe/Paris)
+        run: |
+          sudo rm /etc/localtime
+          sudo ln -s /usr/share/zoneinfo/Europe/Paris /etc/localtime
+
+      - name: Build kernel
+        id: buildKernel
+        run: |
+          export PATH=$(pwd)/toolchains/clang/bin:$PATH
+          echo $PATH
+          export CROSS_COMPILE=$(pwd)/toolchains/google/bin/aarch64-linux-android-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export KBUILD_BUILD_USER="meafrenchdude"
+          export KBUILD_BUILD_HOST="github"
+          export BUILD_START=`date`
+          export IS_CI=true
+
+          export DEFCONFIG="exynos850-a12snsxx_defconfig"
+          export DEVICE="A12s"
+          export DEVICE_ID="A12s"
+          export KERNEL_SOURCE="https://github.com/meafrenchdude/kernel_samsung_a127f"
+
+          # Apply localversion from workflow input
+          if [ -n "${{ github.event.inputs.LOCALVERSION }}" ]; then
+            export LOCALVERSION="${{ github.event.inputs.LOCALVERSION }}"
+          else
+            export LOCALVERSION="-AFrenchKernel_KernelSU-Next_Beta"
+          fi
+
+          bash $(pwd)/build_kernel.sh kernel --jobs $(nproc --all) $DEFCONFIG
+
+          KSU_REV_COUNT=$(cd KernelSU-Next && git rev-list --count HEAD)
+          KSU_VERSION=$(expr 10200 + $KSU_REV_COUNT)
+          echo "- KernelSU version: $KSU_VERSION"
+
+          # Detect SusFS version if available
+          SUSFS_VERSION=$(grep -r 'SUSFS_VERSION' include/ 2>/dev/null | head -1 | awk '{print $NF}' || echo "N/A")
+
+          # Detect SELinux state from defconfig
+          if grep -q "CONFIG_SECURITY_SELINUX=y" arch/arm64/configs/$DEFCONFIG; then
+            SELINUX_STATE="Enforcing"
+          else
+            SELINUX_STATE="Disabled"
+          fi
+
+          echo -e "Localversion: $(./scripts/setlocalversion)\n\nClang version: $(clang -v 2>&1 | grep ' version ' | sed 's/[[:space:]]*$//')\n\nBuild: $BUILD_START\n\nDefconfig: $DEFCONFIG\n\nSELinux: $SELINUX_STATE\n\nKernelSU-Next: $KSU_VERSION\n\nSUSFS: $SUSFS_VERSION\n\nSource: $KERNEL_SOURCE" > buildDetails.txt
+
+          echo "TITLE=Galaxy $DEVICE_ID Kernel" >> $GITHUB_ENV
+
+          mv .config build_config.txt
+          gitsha1=$(git rev-parse --short HEAD)
+          buildDetails="$(make kernelversion)-${DEVICE}_${gitsha1}-$(date +'%Y%m%d%H%M%S')"
+          echo "buildDetails=$buildDetails" >> $GITHUB_OUTPUT
+        working-directory: kernel_root
+
+      - name: Upload config
+        uses: actions/upload-artifact@v4
+        with:
+          name: Config-${{ steps.buildKernel.outputs.buildDetails }}
+          path: kernel_root/build_config.txt
+
+      - name: Upload build details
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildDetails-${{ steps.buildKernel.outputs.buildDetails }}
+          path: kernel_root/buildDetails.txt
+
+      - name: Upload kernel images
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-${{ steps.buildKernel.outputs.buildDetails }}
+          path: |
+            kernel_root/arch/arm64/boot/Image
+            kernel_root/arch/arm64/boot/Image.gz
+            kernel_root/arch/arm64/boot/dts/exynos/*.dtb
+            kernel_root/arch/arm64/boot/dts/samsung/*.dtb
+
+      - name: Copy Image to AnyKernel3
+        run: |
+          cp kernel_root/arch/arm64/boot/Image kernel_root/anykernel3/
+
+      - name: Create AnyKernel3 ZIP
+        run: |
+          cd kernel_root/anykernel3
+          zip -r9 "AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip" ./*
+          ls -lh "AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip"
+
+      - name: Upload AnyKernel3 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3-${{ github.event.inputs.AK3_NAME }}
+          path: kernel_root/anykernel3/AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip
+          compression-level: 9
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          set -e
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$latest_tag" ]; then
+            echo "No previous tag found. Using full commit history."
+            changelog=$(git log --pretty=format:"- %s (%an)" --no-merges)
+          else
+            echo "Found last tag: $latest_tag"
+            changelog=$(git log "${latest_tag}..HEAD" --pretty=format:"- %s (%an)" --no-merges)
+          fi
+
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$changelog" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        working-directory: kernel_root
+
+      - name: Generate tag name
+        id: tag
+        run: |
+          TAG_NAME="build-$(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+        working-directory: kernel_root
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: ${{ env.TITLE }} - ${{ steps.tag.outputs.tag_name }}
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+          files: |
+            kernel_root/anykernel3/AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip
+            kernel_root/buildDetails.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
