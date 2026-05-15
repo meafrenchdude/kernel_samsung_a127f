@@ -1,5 +1,11 @@
 out/
+susfs4ksu/
 *.rej
 *.orig
-*.rej
 *.patch
+*.log
+*.zip
+.vscode
+Image.gz
+*.o
+*.cmd
