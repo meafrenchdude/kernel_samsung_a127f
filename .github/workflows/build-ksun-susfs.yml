@@ -4,177 +4,305 @@ on:
   push:
     branches:
       - kernelsu-next-susfs-dev
-
   workflow_dispatch:
     inputs:
       LOCALVERSION:
-        description: Kernel localversion
+        description: "Kernel localversion suffix"
         required: true
         default: "-AFrenchKernel_KernelSU-Next_v"
       AK3_NAME:
-        description: Enter custom name for AnyKernel3 artifact
+        description: "AnyKernel3 artifact name"
         required: true
         default: "AFrenchKernel_KernelSU-Next_v"
+
+env:
+  KERNEL_BRANCH: kernelsu-next-susfs-dev
+  DEFCONFIG: exynos850-a12snsxx_defconfig
+  DEVICE: A12s
+  KBUILD_BUILD_USER: meafrenchdude
+  KBUILD_BUILD_HOST: github
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Kernel Source
+      # ── Source ────────────────────────────────────────────────────────────────
+
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          repository: meafrenchdude/kernel_samsung_a127f
           path: kernel_root
-          ref: kernelsu-next-susfs-dev
-          show-progress: false
+          ref: ${{ env.KERNEL_BRANCH }}
           fetch-depth: 0
-          submodules: 'recursive'
+          show-progress: false
+          submodules: recursive
 
-      - name: Prepare dependencies + fetch tags
+      # ── Caching ───────────────────────────────────────────────────────────────
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        id: apt-cache
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-kernel-deps-v1
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ env.DEVICE }}-${{ env.KERNEL_BRANCH }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ env.DEVICE }}-${{ env.KERNEL_BRANCH }}-
+
+      - name: Cache toolchains
+        uses: actions/cache@v4
+        id: tc-cache
+        with:
+          path: kernel_root/toolchains
+          key: toolchains-clang11-gcc49-v1
+
+      # ── Dependencies ──────────────────────────────────────────────────────────
+
+      - name: Install build dependencies
+        if: steps.apt-cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt update -y
-          sudo apt install bc cpio flex bison aptitude git python-is-python3 tar perl wget curl lz4 -y
-          sudo aptitude install libssl-dev -y
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            bc cpio flex bison git python-is-python3 \
+            tar perl wget curl lz4 ccache
+          sudo apt-get install -y libssl-dev
+
+      - name: Configure ccache
+        run: |
+          echo "/usr/lib/ccache" >> "$GITHUB_PATH"
+          ccache --max-size=5G
+          ccache --zero-stats
+
+      - name: Configure git and fetch tags
+        working-directory: kernel_root
+        run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git fetch --tags --force
-        working-directory: kernel_root
+
+      # ── Toolchains ────────────────────────────────────────────────────────────
 
       - name: Fetch toolchains (Clang 11 + GCC 4.9)
-        run: |
-          mkdir toolchains && cd toolchains
-          git clone --depth=1 -b clang-11 https://github.com/rsuntk/toolchains.git clang
-          git clone --depth=1 -b androidcc-4.9 https://github.com/rsuntk/toolchains.git google
+        if: steps.tc-cache.outputs.cache-hit != 'true'
         working-directory: kernel_root
+        run: |
+          mkdir -p toolchains
+          git clone --depth=1 -b clang-11 \
+            https://github.com/rsuntk/toolchains.git toolchains/clang
+          git clone --depth=1 -b androidcc-4.9 \
+            https://github.com/rsuntk/toolchains.git toolchains/google
+
+      # ── Timezone ──────────────────────────────────────────────────────────────
 
       - name: Set timezone (Europe/Paris)
-        run: |
-          sudo rm /etc/localtime
-          sudo ln -s /usr/share/zoneinfo/Europe/Paris /etc/localtime
+        run: sudo timedatectl set-timezone Europe/Paris
+
+      # ── Build ─────────────────────────────────────────────────────────────────
 
       - name: Build kernel
-        id: buildKernel
+        id: build
+        working-directory: kernel_root
         run: |
-          export PATH=$(pwd)/toolchains/clang/bin:$PATH
-          echo $PATH
-          export CROSS_COMPILE=$(pwd)/toolchains/google/bin/aarch64-linux-android-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export KBUILD_BUILD_USER="meafrenchdude"
-          export KBUILD_BUILD_HOST="github"
-          export BUILD_START=`date`
+          set -euo pipefail
+
+          export PATH="$(pwd)/toolchains/clang/bin:$PATH"
+          export CROSS_COMPILE="$(pwd)/toolchains/google/bin/aarch64-linux-android-"
+          export CLANG_TRIPLE="aarch64-linux-gnu-"
+          export KBUILD_BUILD_USER="${{ env.KBUILD_BUILD_USER }}"
+          export KBUILD_BUILD_HOST="${{ env.KBUILD_BUILD_HOST }}"
           export IS_CI=true
+          export LOCALVERSION="${{ github.event.inputs.LOCALVERSION || '-AFrenchKernel_KernelSU-Next_Beta' }}"
+          export KERNEL_SOURCE="https://github.com/${{ env.KERNEL_REPO }}"
+          export BUILD_START="$(date)"
 
-          export DEFCONFIG="exynos850-a12snsxx_defconfig"
-          export DEVICE="A12s"
-          export DEVICE_ID="A12s"
-          export KERNEL_SOURCE="https://github.com/meafrenchdude/kernel_samsung_a127f"
+          echo "::group::Kernel build"
+          bash "$(pwd)/build_kernel.sh" kernel \
+            --jobs "$(nproc --all)" \
+            "${{ env.DEFCONFIG }}" \
+            2>&1 | tee build.log
+          echo "::endgroup::"
 
-          # Apply localversion from workflow input
-          if [ -n "${{ github.event.inputs.LOCALVERSION }}" ]; then
-            export LOCALVERSION="${{ github.event.inputs.LOCALVERSION }}"
-          else
-            export LOCALVERSION="-AFrenchKernel_KernelSU-Next_Beta"
+          if [[ ! -f arch/arm64/boot/Image ]]; then
+            echo "::error::Kernel Image not found — build likely failed"
+            exit 1
           fi
 
-          bash $(pwd)/build_kernel.sh kernel --jobs $(nproc --all) $DEFCONFIG
-
+          # Collect metadata
           KSU_REV_COUNT=$(cd KernelSU-Next && git rev-list --count HEAD)
-          KSU_VERSION=$(expr 10200 + $KSU_REV_COUNT)
-          echo "- KernelSU version: $KSU_VERSION"
+          KSU_VERSION=$(( 10200 + KSU_REV_COUNT ))
 
-          # Detect SusFS version if available
-          SUSFS_VERSION=$(grep -r 'SUSFS_VERSION' include/ 2>/dev/null | head -1 | awk '{print $NF}' || echo "N/A")
+          SUSFS_VERSION=$(grep -r 'SUSFS_VERSION' include/ 2>/dev/null \
+            | head -1 | awk '{print $NF}' || echo "N/A")
 
-          # Detect SELinux state from defconfig
-          if grep -q "CONFIG_SECURITY_SELINUX=y" arch/arm64/configs/$DEFCONFIG; then
+          if grep -q "CONFIG_SECURITY_SELINUX=y" \
+              "arch/arm64/configs/${{ env.DEFCONFIG }}"; then
             SELINUX_STATE="Enforcing"
           else
             SELINUX_STATE="Disabled"
           fi
 
-          echo -e "Localversion: $(./scripts/setlocalversion)\n\nClang version: $(clang -v 2>&1 | grep ' version ' | sed 's/[[:space:]]*$//')\n\nBuild: $BUILD_START\n\nDefconfig: $DEFCONFIG\n\nSELinux: $SELINUX_STATE\n\nKernelSU-Next: $KSU_VERSION\n\nSUSFS: $SUSFS_VERSION\n\nSource: $KERNEL_SOURCE" > buildDetails.txt
+          LOCALVER="$(./scripts/setlocalversion)"
+          CLANG_VER="$(clang -v 2>&1 | grep ' version ' | sed 's/[[:space:]]*$//')"
+          GIT_SHA="$(git rev-parse --short HEAD)"
+          KERNEL_VER="$(make kernelversion)"
+          TIMESTAMP="$(date +'%Y%m%d%H%M%S')"
 
-          echo "TITLE=Galaxy $DEVICE_ID Kernel" >> $GITHUB_ENV
+          cat > buildDetails.txt <<EOF
+          Localversion : $LOCALVER
+          Clang        : $CLANG_VER
+          Build start  : $BUILD_START
+          Defconfig    : ${{ env.DEFCONFIG }}
+          SELinux      : $SELINUX_STATE
+          KernelSU-Next: $KSU_VERSION
+          SUSFS        : $SUSFS_VERSION
+          Source       : $KERNEL_SOURCE
+          EOF
 
-          mv .config build_config.txt
-          gitsha1=$(git rev-parse --short HEAD)
-          buildDetails="$(make kernelversion)-${DEVICE}_${gitsha1}-$(date +'%Y%m%d%H%M%S')"
-          echo "buildDetails=$buildDetails" >> $GITHUB_OUTPUT
+          cp .config build_config.txt
+
+          BUILD_TAG="${KERNEL_VER}-${{ env.DEVICE }}_${GIT_SHA}-${TIMESTAMP}"
+          echo "build_tag=${BUILD_TAG}"         >> "$GITHUB_OUTPUT"
+          echo "ksu_version=${KSU_VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "BUILD_TAG=${BUILD_TAG}"         >> "$GITHUB_ENV"
+          echo "RELEASE_TITLE=Galaxy ${{ env.DEVICE }} Kernel — ${BUILD_TAG}" >> "$GITHUB_ENV"
+
+          ccache --show-stats
+
+      # ── Error extraction (only on failure) ────────────────────────────────────
+
+      - name: Extract build errors
+        if: failure() && steps.build.outcome == 'failure'
         working-directory: kernel_root
+        run: |
+          set -euo pipefail
+          mkdir -p error_report
 
-      - name: Upload config
+          python3 - build.log error_report/build_errors.txt <<'PYEOF'
+          import sys, re
+
+          in_file  = sys.argv[1]
+          out_file = sys.argv[2]
+
+          # Matches the start of an error block
+          ERROR_RE = re.compile(
+            r'(error:|undefined reference|ld\.lld:|cannot find|fatal error)',
+            re.IGNORECASE
+          )
+          WARNING_RE = re.compile(r'warning:', re.IGNORECASE)
+
+          # Lines that are continuations of a prior diagnostic:
+          # indented lines, note: lines, caret/squiggle markers, pipe chars
+          CONTINUATION_RE = re.compile(r'^\s+|\bno?te:\b|^\s*[\^~|>]')
+
+          with open(in_file, errors='replace') as f:
+              lines = f.readlines()
+
+          error_blocks   = []
+          warning_blocks = []
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              if ERROR_RE.search(line):
+                  block = [line]
+                  j = i + 1
+                  # Absorb up to 7 continuation lines (covers worst-case LLD spans)
+                  while j < len(lines) and (j - i) <= 7:
+                      next_line = lines[j]
+                      if CONTINUATION_RE.search(next_line) or next_line.strip() == '':
+                          block.append(next_line)
+                          j += 1
+                      else:
+                          break
+                  error_blocks.append(''.join(block))
+                  i = j
+              elif WARNING_RE.search(line):
+                  block = [line]
+                  j = i + 1
+                  while j < len(lines) and (j - i) <= 4:
+                      if CONTINUATION_RE.search(lines[j]):
+                          block.append(lines[j])
+                          j += 1
+                      else:
+                          break
+                  warning_blocks.append(''.join(block))
+                  i = j
+              else:
+                  i += 1
+
+          with open(out_file, 'w') as f:
+              f.write(f"=== ERRORS ({len(error_blocks)} found) ===\n\n")
+              for block in error_blocks:
+                  f.write(block)
+                  f.write('\n')
+              f.write(f"\n=== WARNINGS ({len(warning_blocks)} found) ===\n\n")
+              for block in warning_blocks:
+                  f.write(block)
+                  f.write('\n')
+              f.write("\n=== LAST 100 LINES OF BUILD LOG ===\n")
+
+          PYEOF
+
+          tail -n 100 build.log >> error_report/build_errors.txt || true
+          cp build.log error_report/full_build.log
+
+      - name: Upload error report
+        if: failure() && steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: Config-${{ steps.buildKernel.outputs.buildDetails }}
+          name: BuildErrors-${{ github.run_id }}
+          path: kernel_root/error_report/
+          retention-days: 14
+
+      # ── Artifacts ─────────────────────────────────────────────────────────────
+
+      - name: Upload build config
+        uses: actions/upload-artifact@v4
+        with:
+          name: Config-${{ steps.build.outputs.build_tag }}
           path: kernel_root/build_config.txt
+          retention-days: 30
 
       - name: Upload build details
         uses: actions/upload-artifact@v4
         with:
-          name: BuildDetails-${{ steps.buildKernel.outputs.buildDetails }}
+          name: BuildDetails-${{ steps.build.outputs.build_tag }}
           path: kernel_root/buildDetails.txt
+          retention-days: 30
 
       - name: Upload kernel images
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-${{ steps.buildKernel.outputs.buildDetails }}
+          name: KernelImages-${{ steps.build.outputs.build_tag }}
           path: |
             kernel_root/arch/arm64/boot/Image
             kernel_root/arch/arm64/boot/Image.gz
             kernel_root/arch/arm64/boot/dts/exynos/*.dtb
             kernel_root/arch/arm64/boot/dts/samsung/*.dtb
+          retention-days: 30
 
-      - name: Copy Image to AnyKernel3
+      # ── AnyKernel3 ────────────────────────────────────────────────────────────
+
+      - name: Package AnyKernel3 ZIP
         run: |
+          set -euo pipefail
           cp kernel_root/arch/arm64/boot/Image kernel_root/anykernel3/
 
-      - name: Create AnyKernel3 ZIP
-        run: |
+          AK3_NAME="${{ github.event.inputs.AK3_NAME || env.BUILD_TAG }}"
           cd kernel_root/anykernel3
-          zip -r9 "AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip" ./*
-          ls -lh "AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip"
+          zip -r9 "AnyKernel3-${AK3_NAME}.zip" ./*
+          echo "AK3_ZIP=AnyKernel3-${AK3_NAME}.zip" >> "$GITHUB_ENV"
+          ls -lh "AnyKernel3-${AK3_NAME}.zip"
 
       - name: Upload AnyKernel3 ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: AnyKernel3-${{ github.event.inputs.AK3_NAME }}
-          path: kernel_root/anykernel3/AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip
+          name: AnyKernel3-${{ github.event.inputs.AK3_NAME || env.BUILD_TAG }}
+          path: kernel_root/anykernel3/${{ env.AK3_ZIP }}
           compression-level: 9
+          retention-days: 30
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          set -e
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$latest_tag" ]; then
-            echo "No previous tag found. Using full commit history."
-            changelog=$(git log --pretty=format:"- %s (%an)" --no-merges)
-          else
-            echo "Found last tag: $latest_tag"
-            changelog=$(git log "${latest_tag}..HEAD" --pretty=format:"- %s (%an)" --no-merges)
-          fi
-
-          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$changelog" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-        working-directory: kernel_root
-
-      - name: Generate tag name
-        id: tag
-        run: |
-          TAG_NAME="build-$(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
-          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
-        working-directory: kernel_root
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag_name }}
-          name: ${{ env.TITLE }} - ${{ steps.tag.outputs.tag_name }}
-          body: |
-            ${{ steps.changelog.outputs.changelog }}
-          files: |
-            kernel_root/anykernel3/AnyKernel3-${{ github.event.inputs.AK3_NAME }}.zip
-            kernel_root/buildDetails.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
