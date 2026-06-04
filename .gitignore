@@ -9,3 +9,4 @@ susfs4ksu/
 Image.gz
 *.o
 *.cmd
+compile_commands.json
