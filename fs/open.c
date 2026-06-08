@@ -40,7 +40,6 @@
 
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs_def.h>
-#include <linux/susfs.h>
 #endif
 
 int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
@@ -357,9 +356,14 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
 	return ksys_fallocate(fd, mode, offset, len);
 }
 
-#ifdef CONFIG_KSU
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
 extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
 			 int *flags);
+#endif
+#ifdef CONFIG_KSU_SUSFS
+extern bool __ksu_is_allow_uid_for_current(uid_t uid);
+extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
+			int *flags);
 #endif
 /*
  * access() needs to use the real uid/gid, not the effective uid/gid.
@@ -375,11 +379,6 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
 	struct vfsmount *mnt;
 	int res;
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
-        #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-        struct filename* fname;
-        int status;
-        int error;
-        #endif
 
 	#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
 	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
@@ -1175,15 +1174,6 @@ COMPAT_SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t,
 	return do_sys_open(AT_FDCWD, filename, flags, mode);
 }
 
-#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
-extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
-	    int *flags);
-#endif
-#ifdef CONFIG_KSU_SUSFS
-extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
-			int *flags);
-#endif
 /*
  * Exactly like sys_openat(), except that it doesn't set the
  * O_LARGEFILE flag.

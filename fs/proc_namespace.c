@@ -13,7 +13,6 @@
 #include <linux/fs_struct.h>
 #include <linux/sched/task.h>
 #ifdef CONFIG_KSU_SUSFS
-#include <linux/susfs.h>
 #include <linux/susfs_def.h>
 #endif
 
@@ -24,6 +23,7 @@
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 extern bool susfs_hide_sus_mnts_for_non_su_procs;
+extern bool susfs_is_current_ksu_domain(void);
 #endif
 
 static __poll_t mounts_poll(struct file *file, poll_table *wait)
@@ -111,7 +111,9 @@ static int show_vfsmnt(struct seq_file *m, struct vfsmount *mnt)
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	if (susfs_hide_sus_mnts_for_non_su_procs && r->mnt_id >= DEFAULT_KSU_MNT_ID) {
+	if (susfs_hide_sus_mnts_for_non_su_procs 
+		&& r->mnt_id >= DEFAULT_KSU_MNT_ID
+		&& !susfs_is_current_ksu_domain()) {
 		return 0;
 	}
 #endif
@@ -153,7 +155,9 @@ static int show_mountinfo(struct seq_file *m, struct vfsmount *mnt)
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	if (susfs_hide_sus_mnts_for_non_su_procs && r->mnt_id >= DEFAULT_KSU_MNT_ID) {
+	if (susfs_hide_sus_mnts_for_non_su_procs 
+		&& r->mnt_id >= DEFAULT_KSU_MNT_ID
+		&& !susfs_is_current_ksu_domain()) {
 		return 0;
 	}
 #endif
@@ -227,7 +231,9 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	if (susfs_hide_sus_mnts_for_non_su_procs && r->mnt_id >= DEFAULT_KSU_MNT_ID) {
+	if (susfs_hide_sus_mnts_for_non_su_procs 
+		&& r->mnt_id >= DEFAULT_KSU_MNT_ID
+		&& !susfs_is_current_ksu_domain()) {
 		return 0;
 	}
 #endif
