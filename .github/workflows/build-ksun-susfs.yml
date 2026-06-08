@@ -30,7 +30,7 @@ jobs:
       # ── Source ────────────────────────────────────────────────────────────────
 
       - name: Checkout kernel source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: kernel_root
           ref: ${{ env.KERNEL_BRANCH }}
@@ -41,14 +41,14 @@ jobs:
       # ── Caching ───────────────────────────────────────────────────────────────
 
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: apt-cache
         with:
           path: /var/cache/apt/archives
           key: apt-${{ runner.os }}-kernel-deps-v1
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.ccache
           key: ccache-${{ env.DEVICE }}-${{ env.KERNEL_BRANCH }}-${{ github.sha }}
@@ -56,7 +56,7 @@ jobs:
             ccache-${{ env.DEVICE }}-${{ env.KERNEL_BRANCH }}-
 
       - name: Cache toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: tc-cache
         with:
           path: kernel_root/toolchains
@@ -252,7 +252,7 @@ jobs:
 
       - name: Upload error report
         if: failure() && steps.build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BuildErrors-${{ github.run_id }}
           path: kernel_root/error_report/
@@ -261,21 +261,21 @@ jobs:
       # ── Artifacts ─────────────────────────────────────────────────────────────
 
       - name: Upload build config
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Config-${{ steps.build.outputs.build_tag }}
           path: kernel_root/build_config.txt
           retention-days: 30
 
       - name: Upload build details
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BuildDetails-${{ steps.build.outputs.build_tag }}
           path: kernel_root/buildDetails.txt
           retention-days: 30
 
       - name: Upload kernel images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KernelImages-${{ steps.build.outputs.build_tag }}
           path: |
@@ -299,7 +299,7 @@ jobs:
           ls -lh "AnyKernel3-${AK3_NAME}.zip"
 
       - name: Upload AnyKernel3 ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AnyKernel3-${{ github.event.inputs.AK3_NAME || env.BUILD_TAG }}
           path: kernel_root/anykernel3/${{ env.AK3_ZIP }}
