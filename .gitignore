@@ -1,0 +1,12 @@
+out/
+susfs4ksu/
+.vscode/
+*.rej
+*.orig
+*.patch
+*.log
+*.zip
+Image.gz
+*.o
+*.cmd
+compile_commands.json
