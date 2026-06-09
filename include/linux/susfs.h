@@ -234,6 +234,11 @@ void susfs_get_enabled_features(void __user **user_info);
 void susfs_show_variant(void __user **user_info);
 void susfs_show_version(void __user **user_info);
 
+/* utility functions */
+bool susfs_starts_with(const char *str, const char *prefix);
+bool susfs_ends_with(const char *str, const char *suffix);
+void susfs_start_sdcard_monitor_fn(void);
+
 /* susfs_init */
 void susfs_init(void);
 
