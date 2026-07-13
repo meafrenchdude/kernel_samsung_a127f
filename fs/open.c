@@ -1098,26 +1098,6 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
 }
 EXPORT_SYMBOL(file_open_root);
 
-struct file *filp_clone_open(struct file *oldfile)
-{
-	struct file *file;
-	int retval;
-
-	file = get_empty_filp();
-	if (IS_ERR(file))
-		return file;
-
-	file->f_flags = oldfile->f_flags;
-	retval = vfs_open(&oldfile->f_path, file, oldfile->f_cred);
-	if (retval) {
-		put_filp(file);
-		return ERR_PTR(retval);
-	}
-
-	return file;
-}
-EXPORT_SYMBOL(filp_clone_open);
-
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 extern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
 #endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT

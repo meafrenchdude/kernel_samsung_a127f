@@ -43,6 +43,7 @@
 
 #ifdef CONFIG_FSCRYPT_SDP
 #include <linux/fscrypto_sdp_name.h>
+#endif
 #if defined(CONFIG_KSU_SUSFS_SUS_PATH) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 #include <linux/susfs_def.h>
 #endif
@@ -1675,6 +1676,9 @@ static struct dentry *__lookup_hash(const struct qstr *name,
 		struct dentry *base, unsigned int flags)
 {
 	struct dentry *dentry = lookup_dcache(name, base, flags);
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	bool found_sus_path = false;
+#endif
 	struct dentry *old;
 	struct inode *dir = base->d_inode;
 
@@ -1684,28 +1688,6 @@ static struct dentry *__lookup_hash(const struct qstr *name,
 	/* Don't create child dentry for a dead directory. */
 	if (unlikely(IS_DEADDIR(dir)))
 		return ERR_PTR(-ENOENT);
-
-	dentry = d_alloc(base, name);
-	if (unlikely(!dentry))
-		return ERR_PTR(-ENOMEM);
-
-	old = dir->i_op->lookup(dir, dentry, flags);
-	if (unlikely(old)) {
-		dput(dentry);
-		dentry = old;
-	}
-	return dentry;
-}
-
-static struct dentry *__lookup_hash(const struct qstr *name,
-		struct dentry *base, unsigned int flags)
-{
-	struct dentry *dentry = lookup_dcache(name, base, flags);
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	bool found_sus_path = false;
-#endif
-	if (dentry)
-		return dentry;
 
 	dentry = d_alloc(base, name);
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
@@ -1724,7 +1706,12 @@ retry:
 		goto retry;
 	}
 #endif
-	return lookup_real(base->d_inode, dentry, flags);
+	old = dir->i_op->lookup(dir, dentry, flags);
+	if (unlikely(old)) {
+		dput(dentry);
+		dentry = old;
+	}
+	return dentry;
 }
 
 
@@ -1897,7 +1884,6 @@ retry:
 		goto retry;
 	}
 #endif
-out:
 	inode_unlock_shared(inode);
 	return dentry;
 }
@@ -3407,7 +3393,6 @@ static int lookup_open(struct nameidata *nd, struct path *path,
 		return -ENOENT;
 
 	file->f_mode &= ~FMODE_CREATED;
-	*opened &= ~FILE_CREATED;
 	dentry = d_lookup(dir, &nd->last);
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	if (is_nd_state_open_last && dentry && !IS_ERR(dentry) && dentry->d_inode &&
@@ -5062,8 +5047,6 @@ out:
 	return len;
 }
 
-<<<<<<< HEAD
-=======
 /*
  * A helper for ->readlink().  This should be used *ONLY* for symlinks that
  * have ->get_link() not calling nd_jump_link().  Using (or not using) it
@@ -5072,36 +5055,7 @@ out:
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 extern int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
 #endif
-static int generic_readlink(struct dentry *dentry, char __user *buffer,
-			    int buflen)
-{
-	DEFINE_DELAYED_CALL(done);
-	struct inode *inode = d_inode(dentry);
-	const char *link;
-	int res;
 
-	link = READ_ONCE(inode->i_link);
-
-	if (!link) {
-		link = inode->i_op->get_link(dentry, inode, &done);
-		if (IS_ERR(link))
-			return PTR_ERR(link);
-	}
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
-		res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
-		if (!res) {
-			do_delayed_call(&done);
-			return res;
-		}
-	}
-#endif
-	res = readlink_copy(buffer, buflen, link);
-	do_delayed_call(&done);
-	return res;
-}
-
->>>>>>> d3eef112ad07 (fs: susfs: sync version v2.1.0 de-inlined)
 /**
  * vfs_readlink - copy symlink body into userspace buffer
  * @dentry: dentry on which to get symbolic link

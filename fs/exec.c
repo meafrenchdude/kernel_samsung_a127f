@@ -62,13 +62,10 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
-<<<<<<< HEAD
 #include <linux/task_integrity.h>
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs_def.h>
 #endif
-=======
->>>>>>> 65fb7abff9ce (fs: kernel: susfs: remove inline hooks)
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1893,21 +1890,23 @@ out_ret:
 }
 
 #if defined(CONFIG_KSU)
-__attribute__((hot))
-extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
-				void *argv, void *envp, int *flags);
+extern bool ksu_execveat_hook __read_mostly;
+extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+			void *envp, int *flags);
+extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+				 void *argv, void *envp, int *flags);
 #endif
 static int do_execveat_common(int fd, struct filename *filename,
 			      struct user_arg_ptr argv,
 			      struct user_arg_ptr envp,
 			      int flags)
 {
-   #ifdef CONFIG_KSU
-	if (unlikely(ksu_execveat_hook))
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_SUSFS)
+    if (unlikely(ksu_execveat_hook))
 		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
-	else
+    else
 		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
-   #endif
+#endif
 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
 }
 
