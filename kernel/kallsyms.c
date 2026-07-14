@@ -701,7 +701,7 @@ static int s_show(struct seq_file *m, void *p)
 
 			return 0;
 		}
-		seq_printf(m, "%pK %c %s\n", (void *)iter->value,
+		seq_printf(m, "%px %c %s\n", value,
 			   iter->type, iter->name);
 	}
 #endif
