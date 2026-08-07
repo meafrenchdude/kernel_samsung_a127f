@@ -1,0 +1,145 @@
+From 7e4dd7be641a9c29c537e2f7ad53fdd3f460d8c9 Mon Sep 17 00:00:00 2001
+From: Jamie Leigh Falconer <mrfluffyoven@gmail.com>
+Date: Thu, 23 Jul 2026 15:20:57 +0000
+Subject: [PATCH] fix partittions
+
+Change-Id: I0d467029f11c01979ca3f66c9d3e1f3516bbfffb
+---
+
+diff --git a/recovery.fstab b/recovery.fstab
+index e0761c8..11408ad 100644
+--- a/recovery.fstab
++++ b/recovery.fstab
+@@ -1,16 +1,45 @@
+-system                                          /system               f2fs      ro               wait,avb=vbmeta,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
+-system                                          /system               ext4      ro               wait,avb=vbmeta,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
+-system                                          /system               erofs     ro               wait,avb=vbmeta,logical,first_stage_mount,avb_keys=/avb/q-gsi.avbpubkey:/avb/r-gsi.avbpubkey:/avb/s-gsi.avbpubkey
+-vendor                                          /vendor               f2fs      ro               wait,avb,logical,first_stage_mount
+-product                                         /product              f2fs      ro               wait,avb,logical,first_stage_mount
+-odm                                             /odm                  f2fs      ro               wait,avb,logical,first_stage_mount
+-/dev/block/by-name/prism                        /prism                ext4      ro,barrier=1              nofail,avb,first_stage_mount
+-/dev/block/by-name/optics                       /optics               ext4      ro,barrier=1              nofail,avb,first_stage_mount
+-/dev/block/by-name/metadata                     /metadata             ext4      noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic,sync       wait,first_stage_mount,formattable,check
+-/dev/block/by-name/cache                        /cache                ext4      noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic        wait,check
+-/dev/block/by-name/userdata                     /data                 f2fs      noatime,nosuid,nodev,discard,usrquota,grpquota,fsync_mode=nobarrier,reserve_root=32768,resgid=5678,whint_mode=fs-based,inlinecrypt     latemount,wait,check,quota,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2,checkpoint=fs,fscompress,keydirectory=/metadata/vold/metadata_encryption
+-/dev/block/by-name/efs                          /mnt/vendor/efs       ext4      noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic        wait,check
+-/dev/block/by-name/cpefs                        /mnt/vendor/cpefs     ext4      noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic        wait,check,nofail
+-/dev/block/by-name/misc                         /misc                 emmc      defaults               defaults,first_stage_mount
+-/devices/platform/13500000.dwmmc2/mmc_host*     auto                  auto      default               voldmanaged=sdcard:auto
+-/devices/platform/13600000.usb* auto                  vfat      default               voldmanaged=usb:auto
+\ No newline at end of file
++# Mappers, used by Physwizz (and also thx for his help) to directly point where is core Partition
++# And to actually Able to backup and wipe, due to Super Structure Behaviour
++
++# People who want to edit this: Please use TAB, not spaces to separate, thx
++
++/product_image  emmc    /dev/block/mapper/product   flags=backup=0;flashimg=1;display="Product EMMC"
++/odm_image  emmc    /dev/block/mapper/odm   flags=backup=0;flashimg=1;display="ODM EMMC Image"
++/system_image   emmc    /dev/block/mapper/system    flags=backup=0;flashimg=1;display="System EMMC Image"
++/vendor_image   emmc    /dev/block/mapper/vendor    flags=backup=0;flashimg=1;display="Vendor Image"
++/external_sd    vfat    /dev/block/mmcblk1p1    /dev/block/mmcblk1  flags=storage;wipeingui;removable
++/system     ext4    /dev/block/mapper/system   flags=display="System Logic Partition";backup=1;wipeingui
++/vendor     ext4    /dev/block/mapper/vendor   flags=display="Vendor Logic Partition";wipeingui;backup=1
++/product    ext4    /dev/block/mapper/product  flags=display="Product Logic Partition";backup=1;flashimg=1;wipeingui
++/odm    ext4    /dev/block/mapper/odm  flags=display="ODM LOGIC Partition";wipeingui;backup=1
++/usb-otg    auto    /dev/block/sda1 /dev/block/sda  flags=display="USB-OTG";storage;wipeingui;removable
++
++# AVOID USING /sdcard and sdfat, its not supported...
++
++# Separate
++# These will be separated due to some functions
++# DO NOT PLAY AROUND WITH wipeingui
++
++/boot   emmc    /dev/block/by-name/boot flags=display="Boot, also called Android Kernel"
++/recovery   emmc    /dev/block/by-name/recovery flags=display=recovery
++/metadata   ext4    /dev/block/by-name/metadata flags=display=metadata
++/data   f2fs    /dev/block/by-name/userdata flags=display="Device Data";wipeingui
++/cache  ext4    /dev/block/by-name/cache    flags=display=cache;wipeingui
++/efs    ext4    /dev/block/by-name/sec_efs  flags=display=efs
++/sec_efs    ext4    /dev/block/by-name/sec_efs  flags=display=sec_efs
++#/carrier    ext4    /dev/block/by-name/carrier  flags=display=carrier
++#/preload    ext4    /dev/block/by-name/hidden   flags=display=preload
++/prism  ext4    /dev/block/by-name/prism    flags=display=prism
++/optics ext4    /dev/block/by-name/optics   flags=display=optics
++#/vbmeta_system  emmc    /dev/block/by-name/vbmeta_system    flags=display=vbmeta_system
++#/vendor_boot    emmc    /dev/block/by-name/vendor_boot  flags=display=vendor_boot
++#/vbmeta_samsung emmc    /dev/block/by-name/vbmeta_samsung   flags=display=vbmeta_samsung
++#/system_ext ext4    /dev/block/by-name/system_ext  flags=display="System_EXT_AB"
++#/vendor_dlkm    ext4    /dev/block/by-name/vendor_dlkm  flags=display="Vendor DLKM"
++#/system_dlkm    ext4    /dev/block/by-name/system_dlkm  flags=display="System DLKM"
++/init_boot  emmc    /dev/block/by-name/init_boot    flags=display=init_boot
++
++
++# Samsung ODE
++#/dev/block/by-name/keydata		/keydata	ext4	defaults		recoveryonly
++#/dev/block/by-name/keyrefuge		/keyrefuge	f2fs	defaults		recoveryonly
+\ No newline at end of file
+diff --git a/recovery/root/system/etc/twrp.flags b/recovery/root/system/etc/twrp.flags
+index f06ec7d..d7aa8e3 100644
+--- a/recovery/root/system/etc/twrp.flags
++++ b/recovery/root/system/etc/twrp.flags
+@@ -1,26 +1,61 @@
++# Copyright (c) 2011, Code Aurora Forum. All rights reserved.
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions are
++# met:
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above
++#       copyright notice, this list of conditions and the following
++#       disclaimer in the documentation and/or other materials provided
++#       with the distribution.
++#     * Neither the name of Code Aurora Forum, Inc. nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++# THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++# WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++# ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++# BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++# OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #<mnt_point>    <type>  <src>                                   <mnt_flags and options>
++/product       ext4 /dev/block/mapper/product  flags=backup=1;wipeingui;display="Product"
+ /product       f2fs /dev/block/mapper/product  flags=backup=1;wipeingui;display="Product"
+ /product_image emmc /dev/block/mapper/product  flags=backup=1;flashimg;display="Product Image"
+ /system_root   f2fs /dev/block/mapper/system  flags=backup=1;wipeingui;display="System"
++/system_root   ext4 /dev/block/mapper/system  flags=backup=1;wipeingui;display="System"
+ /system_image  emmc /dev/block/mapper/system  flags=backup=1;flashimg;display="System Image"
+ /vendor        ext4 /dev/block/mapper/vendor  flags=backup=1;wipeingui;display="Vendor"
++/vendor        f2fs /dev/block/mapper/vendor  flags=backup=1;wipeingui;display="Vendor"
+ /vendor_image  emmc /dev/block/mapper/vendor  flags=backup=1;flashimg;display="Vendor Image"
++/odm        ext4 /dev/block/mapper/odm  flags=backup=1;wipeingui;display="Odm"
+ /odm        f2fs /dev/block/mapper/odm  flags=backup=1;wipeingui;display="Odm"
+ /odm_image  emmc /dev/block/mapper/odm  flags=backup=1;flashimg;display="Odm Image"
+ /boot           emmc    /dev/block/by-name/boot                 flags=display="Boot";backup=1;flashimg=1;
++/recovery       emmc    /dev/block/by-name/recovery             flags=display="Recovery";backup=1;flashimg=1;
+ /metadata       ext4    /dev/block/by-name/metadata             flags=display="Metadata";
+ /data           f2fs    /dev/block/by-name/userdata
+ /cache          ext4    /dev/block/by-name/cache                flags=display="Cache";
+ /efs            ext4    /dev/block/by-name/efs                  flags=backup=1;display="Efs";
+ /sec_efs        ext4    /dev/block/by-name/sec_efs              flags=backup=1;display="Sec Efs";
++/modem          emmc    /dev/block/by-name/radio                flags=backup=1;display="Modem";
+ /misc           emmc    /dev/block/by-name/misc
+ /dtbo           emmc    /dev/block/by-name/dtbo                 flags=display="DTBO Image";flashimg=1;backup=1;
++/prism          ext4    /dev/block/by-name/prism                flags=display="Prism";backup=0;
++/prism_image    emmc    /dev/block/by-name/prism                flags=display="Prism Image";backup=1;flashimg=1;
++/optics         ext4    /dev/block/by-name/optics               flags=display="Optics";backup=0;
++/optics_image   emmc    /dev/block/by-name/optics               flags=display="Optics Image";backup=1;flashimg=1;
++/up_param       emmc    /dev/block/by-name/up_param             flags=display="Param";backup=1;flashimg=1;
+ /vbmeta_system  emmc    /dev/block/by-name/vbmeta               flags=display="Vbmeta System";backup=1;flashimg=1;
+ /vbmeta_samsung emmc    /dev/block/by-name/vbmeta_samsung       flags=display="Vbmeta Samsung";backup=1;flashimg=1;
+-/recovery       emmc    /dev/block/by-name/recovery             flags=display="Recovery";backup=1;flashimg=1;
+ 
+ # External Stuff
+ /sdcard1        auto    /dev/block/mmcblk1p1 /dev/block/mmcblk1                 flags=fsflags=utf8;display="MicroSD";storage;wipeingui;removable
+-/usb-otg	auto	/dev/block/sda1	/dev/block/sda				flags=display="USB-OTG";storage;wipeingui;removable
+\ No newline at end of file
++/usb-otg	auto	/dev/block/sda1	/dev/block/sda				flags=display="USB-OTG";storage;wipeingui;removable
