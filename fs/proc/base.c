@@ -898,7 +898,7 @@ static ssize_t mem_rw(struct file *file, char __user *buf,
 	while (count > 0) {
 		int this_len = min_t(int, count, PAGE_SIZE);
 		#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-		vma = find_vma(mm, addr);
+		struct vm_area_struct *vma = find_vma(mm, addr);
 		if (vma && vma->vm_file) {
 			struct inode *inode = file_inode(vma->vm_file);
 			if (SUSFS_IS_INODE_SUS_MAP(inode)) {
