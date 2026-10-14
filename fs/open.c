@@ -1095,6 +1095,9 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
 }
 EXPORT_SYMBOL(file_open_root);
 
+extern struct file *get_empty_filp(void);
+extern void put_filp(struct file *);
+
 struct file *filp_clone_open(struct file *oldfile)
 {
 	struct file *file;
@@ -1105,7 +1108,7 @@ struct file *filp_clone_open(struct file *oldfile)
 		return file;
 
 	file->f_flags = oldfile->f_flags;
-	retval = vfs_open(&oldfile->f_path, file, oldfile->f_cred);
+	retval = vfs_open(&oldfile->f_path, file);
 	if (retval) {
 		put_filp(file);
 		return ERR_PTR(retval);
