@@ -373,13 +373,18 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
 	struct kstat stat;
 	int error;
 
+#if defined(CONFIG_KSU)
+    int dfd = AT_FDCWD;
+    int flag = 0;
+    const char __user *filename_user = filename;
+    ksu_handle_stat(&dfd, &filename_user, &flag);
+    error = vfs_lstat(filename_user, &stat);
+#else
 	error = vfs_lstat(filename, &stat);
+#endif
 	if (error)
 		return error;
 
-#if defined(CONFIG_KSU)
-	ksu_handle_stat(&dfd, &filename, &flag);
-#endif
 	return cp_new_stat(&stat, statbuf);
 }
 
