@@ -5056,34 +5056,6 @@ out:
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 extern int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
 #endif
-static int generic_readlink(struct dentry *dentry, char __user *buffer,
-			    int buflen)
-{
-	DEFINE_DELAYED_CALL(done);
-	struct inode *inode = d_inode(dentry);
-	const char *link;
-	int res;
-
-	link = READ_ONCE(inode->i_link);
-
-	if (!link) {
-		link = inode->i_op->get_link(dentry, inode, &done);
-		if (IS_ERR(link))
-			return PTR_ERR(link);
-	}
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
-		res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
-		if (!res) {
-			do_delayed_call(&done);
-			return res;
-		}
-	}
-#endif
-	res = readlink_copy(buffer, buflen, link);
-	do_delayed_call(&done);
-	return res;
-}
 
 /**
  * vfs_readlink - copy symlink body into userspace buffer
